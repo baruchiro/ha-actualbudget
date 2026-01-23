@@ -31,7 +31,7 @@ from .const import (
     CONFIG_CERT,
     CONFIG_ENCRYPT_PASSWORD,
 )
-from .actualbudget import ActualBudget, BudgetAmount
+from .actualbudget import ActualBudget, BudgetAmount, Transaction
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.setLevel(logging.DEBUG)
@@ -106,6 +106,24 @@ async def async_setup_entry(
         for budget in budgets
     ]
     async_add_entities(budgets, update_before_add=True)
+
+    # Add uncategorised transactions sensor
+    uncategorised_transactions = await api.get_uncategorised_transactions()
+    lastUpdate = datetime.datetime.now()
+    uncategorised_sensor = actualbudgetUncategorisedSensor(
+        api,
+        endpoint,
+        password,
+        file,
+        unit,
+        cert,
+        encrypt_password,
+        uncategorised_transactions,
+        unique_source_id,
+        prefix,
+        lastUpdate,
+    )
+    async_add_entities([uncategorised_sensor], update_before_add=True)
 
 
 class actualbudgetAccountSensor(SensorEntity):
@@ -335,5 +353,101 @@ class actualbudgetBudgetSensor(SensorEntity):
             _LOGGER.exception(
                 "Unknown error updating data from ActualBudget API to budget %s. %s",
                 self._name,
+                err,
+            )
+
+
+class actualbudgetUncategorisedSensor(SensorEntity):
+    """Representation of an ActualBudget Uncategorised Transactions Sensor."""
+
+    def __init__(
+        self,
+        api: ActualBudget,
+        endpoint: str,
+        password: str,
+        file: str,
+        unit: str,
+        cert: str,
+        encrypt_password: str | None,
+        transactions: List[Transaction],
+        unique_source_id: str,
+        prefix: str,
+        last_updated: datetime.datetime,
+    ):
+        super().__init__()
+        self._api = api
+        self._transactions = transactions
+        self._unique_source_id = unique_source_id
+        self._endpoint = endpoint
+        self._password = password
+        self._file = file
+        self._cert = cert
+        self._encrypt_password = encrypt_password
+        self._prefix = prefix
+        self._icon = DEFAULT_ICON
+        self._available = True
+        self._last_updated = last_updated
+
+    @property
+    def name(self) -> str:
+        """Return the name of the entity."""
+        if self._prefix:
+            return f"{self._prefix}_uncategorised_transactions"
+        return "uncategorised_transactions"
+
+    @property
+    def unique_id(self) -> str:
+        """Return the unique ID of the sensor."""
+        if self._prefix:
+            return f"{DOMAIN}-{self._unique_source_id}-{self._prefix}-uncategorised-transactions".lower()
+        return f"{DOMAIN}-{self._unique_source_id}-uncategorised-transactions".lower()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self._available
+
+    @property
+    def state(self) -> int:
+        """Return the count of uncategorised transactions."""
+        return len(self._transactions)
+
+    @property
+    def icon(self):
+        return self._icon
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Union[List[Dict], int]]:
+        """Return the state attributes."""
+        transactions_list = []
+        for t in self._transactions:
+            transactions_list.append({
+                "id": t.id,
+                "date": t.date,
+                "amount": float(t.amount),
+                "account": t.account_name,
+                "payee": t.payee_name,
+                "notes": t.notes,
+            })
+        return {
+            "transactions": transactions_list,
+            "count": len(self._transactions),
+        }
+
+    async def async_update(self) -> None:
+        """Fetch new state data for the sensor."""
+        if (
+            self._last_updated
+            and datetime.datetime.now() - self._last_updated < MINIMUM_INTERVAL
+        ):
+            return
+        try:
+            api = self._api
+            self._transactions = await api.get_uncategorised_transactions()
+            self._last_updated = datetime.datetime.now()
+        except Exception as err:
+            self._available = False
+            _LOGGER.exception(
+                "Unknown error updating uncategorised transactions from ActualBudget API. %s",
                 err,
             )

@@ -11,7 +11,7 @@ from actual.exceptions import (
     InvalidZipFile,
     AuthorizationError,
 )
-from actual.queries import get_accounts, get_account, get_budgets, get_category
+from actual.queries import get_accounts, get_account, get_budgets, get_category, get_transactions
 from requests.exceptions import ConnectionError, SSLError
 import datetime
 import threading
@@ -40,6 +40,17 @@ class Budget:
 class Account:
     name: str | None
     balance: Decimal
+
+
+@dataclass
+class Transaction:
+    id: str
+    date: str
+    amount: Decimal
+    account_name: str | None
+    payee_name: str | None
+    notes: str | None
+    category_name: str | None
 
 
 class ActualBudget:
@@ -181,6 +192,31 @@ class ActualBudget:
         category_data = get_category(session, budget_name)
         budget.balance = category_data.balance if category_data else Decimal(0)
         return budget
+
+    async def get_uncategorised_transactions(self) -> List[Transaction]:
+        """Get uncategorised transactions."""
+        return await self.hass.async_add_executor_job(
+            self.get_uncategorised_transactions_sync
+        )
+
+    def get_uncategorised_transactions_sync(self) -> List[Transaction]:
+        session = self.get_session()
+        transactions = get_transactions(session, is_parent=True)
+        uncategorised = []
+        for t in transactions:
+            if t.category_id is None:
+                uncategorised.append(
+                    Transaction(
+                        id=t.id,
+                        date=t.get_date().isoformat(),
+                        amount=t.get_amount(),
+                        account_name=t.account.name if t.account else None,
+                        payee_name=t.payee.name if t.payee else None,
+                        notes=t.notes,
+                        category_name=None,
+                    )
+                )
+        return uncategorised
 
     async def test_connection(self):
         return await self.hass.async_add_executor_job(self.test_connection_sync)
