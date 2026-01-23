@@ -10,6 +10,7 @@ Note: It's a work in progress, it should work but it may have some bugs and brea
 
 - Gets all accounts balance and set it as sensors
 - Gets all budgets and set the current month as sensors (last month and total are set as extra attributes)
+- Tracks uncategorised transactions with a dedicated sensor showing count and transaction details
 
 # Installation
 
@@ -55,3 +56,41 @@ Encrypt Password: ''
 File: ab7c8d8e-048b-41b1-a9cf-13f0679edc0b
 Cert: 'SKIP'
 ```
+
+# Sensors
+
+The integration creates the following sensors:
+
+## Account Sensors
+- **Entity Name**: `{prefix}_{account_name}` (e.g., `actualbudget_Checking`)
+- **State**: Current account balance
+- **Device Class**: Monetary
+- **Update Frequency**: Every 60 minutes
+
+## Budget Sensors
+- **Entity Name**: `{prefix}_budget_{budget_name}` (e.g., `actualbudget_budget_Groceries`)
+- **State**: Running total of current + past months' budget amounts plus category balance
+- **Attributes**:
+  - `current_month`: Current month (YYYYMM format)
+  - `current_amount`: Current month amount
+  - `previous_month`: Previous month (YYYYMM format)
+  - `previous_amount`: Previous month amount
+  - `total_amount`: Sum of all monthly amounts
+- **Device Class**: Monetary
+- **Update Frequency**: Every 60 minutes
+
+## Uncategorised Transactions Sensor
+- **Entity Name**: `{prefix}_uncategorised_transactions` (e.g., `actualbudget_uncategorised_transactions`)
+- **State**: Count of transactions without a category assigned
+- **Attributes**:
+  - `transactions`: List of uncategorised transaction details
+    - `id`: Transaction ID
+    - `date`: Transaction date (ISO format)
+    - `amount`: Transaction amount
+    - `account`: Account name
+    - `payee`: Payee name
+    - `notes`: Transaction notes
+  - `count`: Number of uncategorised transactions (same as state)
+- **Update Frequency**: Every 60 minutes
+
+**Note**: All sensors have a minimum 1-minute debounce between updates to prevent API hammering.
